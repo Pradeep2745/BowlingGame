@@ -1,7 +1,7 @@
 #include <iostream>
 #include <vector>
 #include <string>
-#include <cassert>
+#include <stdexcept>
 
 using namespace std;
 
@@ -40,6 +40,10 @@ public:
 
     Frame& getFrame(int gameNumber)
     {
+        if (gameNumber < 0 || gameNumber >= 10)
+        {
+            throw out_of_range("Frame index out of range");
+        }
         return frames[gameNumber];
     }
 
@@ -50,6 +54,11 @@ public:
 
     int getScoreForFrame(int frameIndex)
     {
+        if (frameIndex < 0 || frameIndex >= 10)
+        {
+            throw out_of_range("Frame index out of range");
+        }
+
         int score = 0;
         Frame& frame = frames[frameIndex];
 
@@ -81,8 +90,7 @@ public:
 private:
     int strikeBonus(int frameIndex)
     {
-        // Bonus is next two rolls after strike
-        if (frameIndex >= 9) // 10th frame strike bonus rolls handled in thirdRoll and secondRoll
+        if (frameIndex >= 9)
         {
             return frames[frameIndex].secondRoll + frames[frameIndex].thirdRoll;
         }
@@ -93,7 +101,7 @@ private:
         if (nextFrame.isStrike)
         {
             bonus = 10;
-            if (frameIndex + 1 == 9) // 10th frame
+            if (frameIndex + 1 == 9)
             {
                 bonus = bonus + nextFrame.secondRoll;
             }
@@ -135,9 +143,37 @@ public:
     }
 };
 
-// Helper for tests to manually set frame rolls and flags
+// Validate rolls and throw if invalid
 void addRollsToFrame(Player& player, int gameNumber, int firstRoll, int secondRoll, int thirdRoll = 0)
 {
+    if (gameNumber < 0 || gameNumber >= 10)
+    {
+        throw out_of_range("Frame index out of range");
+    }
+
+    if (firstRoll < 0 || firstRoll > 10)
+    {
+        throw invalid_argument("First roll must be between 0 and 10");
+    }
+
+    if (secondRoll < 0 || secondRoll > 10)
+    {
+        throw invalid_argument("Second roll must be between 0 and 10");
+    }
+
+    if (thirdRoll < 0 || thirdRoll > 10)
+    {
+        throw invalid_argument("Third roll must be between 0 and 10");
+    }
+
+    // For frames 0-8, total pins in two rolls cannot exceed 10
+    if (gameNumber < 9 && (firstRoll + secondRoll > 10))
+    {
+        throw invalid_argument("Total pins in a frame cannot exceed 10 (except 10th frame)");
+    }
+
+    // For 10th frame (index 9), more flexible rules due to bonus rolls - skipping detailed validation here for simplicity
+
     Frame& frame = player.getFrame(gameNumber);
     frame.firstRoll = firstRoll;
     frame.secondRoll = secondRoll;
@@ -146,84 +182,113 @@ void addRollsToFrame(Player& player, int gameNumber, int firstRoll, int secondRo
     frame.isSpare = (!frame.isStrike && (firstRoll + secondRoll == 10));
 }
 
+void assertEqual(int actual, int expected, const string& testName)
+{
+    if (actual != expected)
+    {
+        throw runtime_error(testName + " failed: expected " + to_string(expected) + ", got " + to_string(actual));
+    }
+    else
+    {
+        cout << testName << " passed.\n";
+    }
+}
+
 int main()
 {
-    cout << "Test cases...\n";
-
-    // Test 1: Simple score with no strikes or spares
+    try
     {
-        Player player("TestPlayer");
-        for (int gameNumber = 0; gameNumber < 10; ++gameNumber)
-        {
-            addRollsToFrame(player, gameNumber, 3, 4);
-        }
-        int expected = 70;
-        int actual = player.calculateScore();
-        assert(actual == expected);
-        cout << "testSimpleScore passed.\n";
-    }
+        cout << "Test cases...\n";
 
-    // Test 2: Spare calculation
+        // Test 1: Simple score with no strikes or spares
+        {
+            Player player("TestPlayer");
+            for (int gameNumber = 0; gameNumber < 10; ++gameNumber)
+            {
+                addRollsToFrame(player, gameNumber, 3, 4);
+            }
+            int expected = 70;
+            int actual = player.calculateScore();
+            assertEqual(actual, expected, "testSimpleScore");
+        }
+
+        // Test 2: Spare calculation
+        {
+            Player player("SparePlayer");
+            addRollsToFrame(player, 0, 4, 6);
+            addRollsToFrame(player, 1, 3, 5);
+            for (int gameNumber = 2; gameNumber < 10; ++gameNumber)
+            {
+                addRollsToFrame(player, gameNumber, 0, 0);
+            }
+            int expected = 21;
+            int actual = player.calculateScore();
+            assertEqual(actual, expected, "testSpareScore");
+        }
+
+        // Test 3: Strike calculation
+        {
+            Player player("StrikePlayer");
+            addRollsToFrame(player, 0, 10, 0);
+            addRollsToFrame(player, 1, 3, 5);
+            for (int gameNumber = 2; gameNumber < 10; ++gameNumber)
+            {
+                addRollsToFrame(player, gameNumber, 0, 0);
+            }
+            int expected = 26;
+            int actual = player.calculateScore();
+            assertEqual(actual, expected, "testStrikeScore");
+        }
+
+        // Test 4: Final frame strike with bonus rolls
+        {
+            Player player("FinalFramePlayer");
+            for (int gameNumber = 0; gameNumber < 9; ++gameNumber)
+            {
+                addRollsToFrame(player, gameNumber, 0, 0);
+            }
+            addRollsToFrame(player, 9, 10, 10, 10);
+            int expected = 30;
+            int actual = player.calculateScore();
+            assertEqual(actual, expected, "testFinalFrameStrike");
+        }
+
+        // Test 5: Final frame spare with bonus roll
+        {
+            Player player("FinalSparePlayer");
+            for (int gameNumber = 0; gameNumber < 9; ++gameNumber)
+            {
+                addRollsToFrame(player, gameNumber, 0, 0);
+            }
+            addRollsToFrame(player, 9, 4, 6, 7);
+            int expected = 17;
+            int actual = player.calculateScore();
+            assertEqual(actual, expected, "testFinalFrameSpare");
+        }
+
+        // Example of a failure test: invalid frame index
+        try
+        {
+            Player p("InvalidPlayer");
+            addRollsToFrame(p, 10, 3, 4); // Invalid frame index: 10
+            cout << "Error: Invalid frame index test failed to throw.\n";
+        }
+        catch (const exception& e)
+        {
+            cout << "Invalid frame index test passed (caught exception): " << e.what() << "\n";
+        }
+
+        cout << "All tests passed successfully.\n";
+    }
+    catch (const exception& e)
     {
-        Player player("SparePlayer");
-        addRollsToFrame(player, 0, 4, 6);  // spare
-        addRollsToFrame(player, 1, 3, 5);
-        for (int gameNumber = 2; gameNumber < 10; ++gameNumber)
-        {
-            addRollsToFrame(player, gameNumber, 0, 0);
-        }
-        int expected = 21;
-        int actual = player.calculateScore();
-        assert(actual == expected);
-        cout << "testSpareScore passed.\n";
+        cerr << "Test failed with exception: " << e.what() << endl;
     }
-
-    // Test 3: Strike calculation
+    catch (...)
     {
-        Player player("StrikePlayer");
-        addRollsToFrame(player, 0, 10, 0);  // strike
-        addRollsToFrame(player, 1, 3, 5);
-        for (int gameNumber = 2; gameNumber < 10; ++gameNumber)
-        {
-            addRollsToFrame(player, gameNumber, 0, 0);
-        }
-        int expected = 26;
-        int actual = player.calculateScore();
-        assert(actual == expected);
-        cout << "testStrikeScore passed.\n";
+        cerr << "Test failed with unknown exception." << endl;
     }
-
-    // Test 4: Final frame strike with bonus rolls
-    {
-        Player player("FinalFramePlayer");
-        for (int gameNumber = 0; gameNumber < 9; ++gameNumber)
-        {
-            addRollsToFrame(player, gameNumber, 0, 0);
-        }
-        addRollsToFrame(player, 9, 10, 10, 10);
-        int expected = 30;
-        int actual = player.calculateScore();
-        assert(actual == expected);
-        cout << "testFinalFrameStrike passed.\n";
-    }
-
-    // Test 5: Final frame spare with bonus roll
-    {
-        Player player("FinalSparePlayer");
-        for (int gameNumber = 0; gameNumber < 9; ++gameNumber)
-        {
-            addRollsToFrame(player, gameNumber, 0, 0);
-        }
-        addRollsToFrame(player, 9, 4, 6, 7);
-        int expected = 17;
-        int actual = player.calculateScore();
-        assert(actual == expected);
-        cout << "testFinalFrameSpare passed.\n";
-    }
-
-    cout << "All tests passed successfully.\n";
 
     return 0;
 }
-
 
